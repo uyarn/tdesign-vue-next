@@ -1,0 +1,110 @@
+name: Notify WeCom on Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要补发的 Release tag（例如 v1.2.3，必须已有对应的已发布 Release）"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send markdown to WeCom group robot
+        env:
+          WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_API_URL: ${{ github.api_url }}
+        run: |
+          python3 - <<'PY'
+          import os, json, re, html, urllib.request, urllib.parse, urllib.error
+
+          webhook = os.environ.get("WECOM_WEBHOOK", "").strip()
+          if not webhook:
+              raise SystemExit("请先配置仓库 Secret：WECOM_WEBHOOK")
+          with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as f:
+              event = json.load(f)
+          repo = event["repository"]["full_name"]
+          release = event.get("release")
+
+          # 自动触发直接读取事件；手动触发则根据输入的 tag 查询 Release。
+          if release is None:
+              requested_tag = (event.get("inputs", {}).get("tag") or "").strip()
+              if not requested_tag:
+                  raise SystemExit("手动补发时必须填写 Release tag")
+              token = os.environ.get("GITHUB_TOKEN", "").strip()
+              if not token:
+                  raise SystemExit("缺少 GITHUB_TOKEN，无法查询 Release")
+              api_url = os.environ["GITHUB_API_URL"].rstrip("/")
+              encoded_tag = urllib.parse.quote(requested_tag, safe="")
+              release_req = urllib.request.Request(
+                  f"{api_url}/repos/{repo}/releases/tags/{encoded_tag}",
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(release_req, timeout=20) as resp:
+                      release = json.load(resp)
+              except urllib.error.HTTPError as exc:
+                  if exc.code == 404:
+                      raise SystemExit(
+                          f"找不到 tag {requested_tag!r} 对应的已发布 Release，"
+                          "请检查 tag、发布状态及仓库访问权限。仅推送 tag 不够。"
+                      ) from None
+                  raise SystemExit(f"查询 Release 失败：HTTP {exc.code}") from None
+              except urllib.error.URLError as exc:
+                  raise SystemExit(f"查询 Release 网络异常：{exc.reason}") from None
+
+          if release.get("draft"):
+              raise SystemExit("该 Release 仍是草稿，不能发送发布通知")
+          tag = release.get("tag_name") or ""
+          name = release.get("name") or tag
+          author = (release.get("author") or {}).get("login") or "unknown"
+          url = release.get("html_url") or ""
+          body = release.get("body") or ""
+
+          # 清洗 release notes：去 HTML 注释、图片与标签，压成纯文本
+          body = re.sub(r"<!--.*?-->", "", body, flags=re.S)
+          body = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", body)
+          body = re.sub(r"<[^>]+>", "", body)
+          body = html.unescape(body)
+          body = re.sub(r"\n{3,}", "\n\n", body).strip()
+
+          limit = 1200
+          if len(body.encode("utf-8")) > limit * 3:
+              body = body.encode("utf-8")[: limit * 3].decode("utf-8", "ignore").rstrip() + "\n…（内容过长已截断）"
+
+          quoted = "\n".join("> " + line for line in body.splitlines()) if body else "> （本次发布没有填写 Release Notes）"
+
+          content = "\n".join([
+              f"## 新版本发布：**{repo} {tag}**",
+              f"**{name}**",
+              f"发布人：{author}",
+              "",
+              quoted,
+              "",
+              f"[查看完整 Release Notes]({url})",
+          ])
+
+          payload = json.dumps({"msgtype": "markdown", "markdown": {"content": content}}).encode("utf-8")
+          req = urllib.request.Request(
+              webhook,
+              data=payload,
+              headers={"Content-Type": "application/json"},
+          )
+          with urllib.request.urlopen(req, timeout=20) as resp:
+              result = json.load(resp)
+          print("wecom response:", result)
+          if result.get("errcode") != 0:
+              raise SystemExit(f"send failed: {result}")
+          PY
