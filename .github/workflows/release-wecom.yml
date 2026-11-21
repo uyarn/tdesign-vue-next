@@ -69,7 +69,6 @@ jobs:
               raise SystemExit("该 Release 仍是草稿，不能发送发布通知")
           tag = release.get("tag_name") or ""
           name = release.get("name") or tag
-          author = (release.get("author") or {}).get("login") or "unknown"
           url = release.get("html_url") or ""
           body = release.get("body") or ""
 
@@ -80,6 +79,16 @@ jobs:
           body = html.unescape(body)
           body = re.sub(r"\n{3,}", "\n\n", body).strip()
 
+          # 双语日志只保留第二个 Feature/Features 标题之前的内容；没有则全部保留。
+          feature_headings = list(re.finditer(
+              r"^[ \t]*#{1,6}[ \t]+[^\w\r\n]*features?\b[^\r\n]*",
+              body,
+              flags=re.I | re.M,
+          ))
+          if len(feature_headings) >= 2:
+              body = body[:feature_headings[1].start()].rstrip()
+
+          # 企业微信单条 markdown 上限约 4096 字节，按字节截断，留足余量
           limit = 1200
           if len(body.encode("utf-8")) > limit * 3:
               body = body.encode("utf-8")[: limit * 3].decode("utf-8", "ignore").rstrip() + "\n…（内容过长已截断）"
@@ -89,7 +98,6 @@ jobs:
           content = "\n".join([
               f"## 新版本发布：**{repo} {tag}**",
               f"**{name}**",
-              f"发布人：{author}",
               "",
               quoted,
               "",
