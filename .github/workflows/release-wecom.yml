@@ -96,8 +96,7 @@ jobs:
           quoted = "\n".join("> " + line for line in body.splitlines()) if body else "> （本次发布没有填写 Release Notes）"
 
           content = "\n".join([
-              f"## 新版本发布：**{repo} {tag}**",
-              f"**{name}**",
+              f"## 新版本发布：{tag}**",
               "",
               quoted,
               "",
