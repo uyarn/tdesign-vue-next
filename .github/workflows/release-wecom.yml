@@ -79,15 +79,19 @@ jobs:
           body = html.unescape(body)
           body = re.sub(r"\n{3,}", "\n\n", body).strip()
 
-          # 双语日志只保留第二个 Feature/Features 标题之前的内容；没有则全部保留。
-          feature_headings = list(re.finditer(
-              r"^[ \t]*#{1,6}[ \t]+[^\w\r\n]*features?\b[^\r\n]*",
-              body,
-              flags=re.I | re.M,
-          ))
-          if len(feature_headings) >= 2:
-              body = body[:feature_headings[1].start()].rstrip()
+          # 有分隔符时取 Features 标题之后、其后第一个 "---" 之前的正文。
+          # 没有分隔符则保留标题及其后全部内容；找不到标题时保留原文。
+          feature_heading = "### 🚀 Features"
+          feature_start = body.find(feature_heading)
+          if feature_start != -1:
+              content_start = feature_start + len(feature_heading)
+              separator_start = body.find("---", content_start)
+              if separator_start != -1:
+                  body = body[content_start:separator_start].strip()
+              else:
+                  body = body[feature_start:].strip()
 
+          # 企业微信单条 markdown 上限约 4096 字节，按字节截断，留足余量
           limit = 1200
           if len(body.encode("utf-8")) > limit * 3:
               body = body.encode("utf-8")[: limit * 3].decode("utf-8", "ignore").rstrip() + "\n…（内容过长已截断）"
@@ -95,7 +99,7 @@ jobs:
           quoted = "\n".join("> " + line for line in body.splitlines()) if body else "> （本次发布没有填写 Release Notes）"
 
           content = "\n".join([
-              f"## 新版本发布：{tag}**",
+              f"## 新版本发布：{tag}",
               "",
               quoted,
               "",
