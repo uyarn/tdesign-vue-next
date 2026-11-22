@@ -79,7 +79,7 @@ jobs:
           body = html.unescape(body)
           body = re.sub(r"\n{3,}", "\n\n", body).strip()
 
-          # 有分隔符时取 Features 标题之后、其后第一个 "---" 之前的正文。
+          # 保留 Features 标题及其后第一个 "---" 之前的内容，不含分隔符。
           # 没有分隔符则保留标题及其后全部内容；找不到标题时保留原文。
           feature_heading = "### 🚀 Features"
           feature_start = body.find(feature_heading)
@@ -87,7 +87,7 @@ jobs:
               content_start = feature_start + len(feature_heading)
               separator_start = body.find("---", content_start)
               if separator_start != -1:
-                  body = body[content_start:separator_start].strip()
+                  body = body[feature_start:separator_start].strip()
               else:
                   body = body[feature_start:].strip()
 
@@ -103,7 +103,7 @@ jobs:
               "",
               quoted,
               "",
-              f"[查看完整 Release Notes]({url})",
+              f"[查看完整发布日志]({url})",
           ])
 
           payload = json.dumps({"msgtype": "markdown", "markdown": {"content": content}}).encode("utf-8")
