@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "要补发的 Release tag（例如 v1.2.3，必须已有对应的已发布 Release）"
+        description: "要补发的 Release tag"
         required: true
         type: string
 
@@ -79,8 +79,6 @@ jobs:
           body = html.unescape(body)
           body = re.sub(r"\n{3,}", "\n\n", body).strip()
 
-          # 保留 Features 标题及其后第一个 "---" 之前的内容，不含分隔符。
-          # 没有分隔符则保留标题及其后全部内容；找不到标题时保留原文。
           feature_heading = "### 🚀 Features"
           feature_start = body.find(feature_heading)
           if feature_start != -1:
@@ -99,10 +97,30 @@ jobs:
               flags=re.M,
           )
 
-          # 企业微信单条 markdown 上限约 4096 字节，按字节截断，留足余量
-          limit = 1200
-          if len(body.encode("utf-8")) > limit * 3:
-              body = body.encode("utf-8")[: limit * 3].decode("utf-8", "ignore").rstrip() + "\n…（内容过长已截断）"
+          # 正文最多 3600 字节，按完整日志条目截断，不保留半条内容。
+          limit = 3600
+          if len(body.encode("utf-8")) > limit:
+              # 顶层列表项或标题开始新块，续行和缩进子项保留在同一条日志中。
+              blocks = re.split(
+                  r"(?m)(?=^(?:#{1,6}[ \t]+|[-*+][ \t]+|\d+[.)][ \t]+))",
+                  body,
+              )
+              retained_body = ""
+              for block in blocks:
+                  candidate = retained_body + block
+                  if len((candidate.rstrip() + "\n...").encode("utf-8")) > limit:
+                      break
+                  retained_body = candidate
+
+              # 避免末尾只剩标题，而该节的第一条日志已经被省略。
+              retained_lines = retained_body.rstrip().splitlines()
+              while retained_lines and (
+                  not retained_lines[-1].strip()
+                  or re.match(r"^#{1,6}[ \t]+", retained_lines[-1])
+              ):
+                  retained_lines.pop()
+              body = "\n".join(retained_lines).rstrip()
+              body = body + "\n..." if body else "..."
 
           quoted = "\n".join("> " + line for line in body.splitlines()) if body else "> （本次发布没有填写 Release Notes）"
 
