@@ -88,7 +88,6 @@ jobs:
           if len(feature_headings) >= 2:
               body = body[:feature_headings[1].start()].rstrip()
 
-          # 企业微信单条 markdown 上限约 4096 字节，按字节截断，留足余量
           limit = 1200
           if len(body.encode("utf-8")) > limit * 3:
               body = body.encode("utf-8")[: limit * 3].decode("utf-8", "ignore").rstrip() + "\n…（内容过长已截断）"
