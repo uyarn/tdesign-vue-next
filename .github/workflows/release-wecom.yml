@@ -1,4 +1,4 @@
-name: Notify WeCom on Release
+name: notify-wecom-on-release
 
 on:
   release:
@@ -26,6 +26,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import os, json, re, html, urllib.request, urllib.parse, urllib.error
+          from datetime import datetime, timedelta, timezone
 
           webhook = os.environ.get("WECOM_WEBHOOK", "").strip()
           if not webhook:
@@ -72,6 +73,16 @@ jobs:
           url = release.get("html_url") or ""
           body = release.get("body") or ""
 
+          # 使用 Release 的原始发布日期，转换为北京时间；补发时不使用当天日期。
+          published_at = release.get("published_at") or ""
+          try:
+              published_time = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
+              if published_time.tzinfo is None:
+                  published_time = published_time.replace(tzinfo=timezone.utc)
+              published_date = published_time.astimezone(timezone(timedelta(hours=8))).strftime("%Y-%m-%d")
+          except ValueError:
+              published_date = "未知"
+
           # 清洗 release notes：去 HTML 注释、图片与标签，压成纯文本
           body = re.sub(r"<!--.*?-->", "", body, flags=re.S)
           body = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", body)
@@ -79,6 +90,8 @@ jobs:
           body = html.unescape(body)
           body = re.sub(r"\n{3,}", "\n\n", body).strip()
 
+          # 保留 Features 标题及其后第一个 "---" 之前的内容，不含分隔符。
+          # 没有分隔符则保留标题及其后全部内容；找不到标题时保留原文。
           feature_heading = "### 🚀 Features"
           feature_start = body.find(feature_heading)
           if feature_start != -1:
@@ -125,7 +138,7 @@ jobs:
           quoted = "\n".join("> " + line for line in body.splitlines()) if body else "> （本次发布没有填写 Release Notes）"
 
           content = "\n".join([
-              f"## 新版本发布：{tag}",
+              f"## 版本发布：{tag} {published_date}",
               "",
               quoted,
               "",
