@@ -91,6 +91,14 @@ jobs:
               else:
                   body = body[feature_start:].strip()
 
+          # 去掉所有三级标题后的空白行，保留标题与正文之间的一个换行。
+          body = re.sub(
+              r"^([ \t]{0,3}###[ \t]+[^\r\n]*)(\r?\n)(?:[ \t]*\r?\n)+",
+              r"\1\2",
+              body,
+              flags=re.M,
+          )
+
           # 企业微信单条 markdown 上限约 4096 字节，按字节截断，留足余量
           limit = 1200
           if len(body.encode("utf-8")) > limit * 3:
